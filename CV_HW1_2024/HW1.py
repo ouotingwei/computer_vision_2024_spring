@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import open3d as o3d
 import matplotlib.pyplot as plt
-
+import math
 image_row = 120
 image_col = 120
 
@@ -66,32 +66,86 @@ def read_bmp(filepath):
     global image_col
     image = cv2.imread(filepath,cv2.IMREAD_GRAYSCALE)
     image_row , image_col = image.shape
-    return image
+    # use gaussian blur
+    smooth_img = cv2.GaussianBlur(image, (3, 3), 0)
+    return smooth_img
 
+def get_light_source_from_txt( file_Dir ):
+    with open( file_Dir + '/LightSource.txt', 'r' ) as file:
+        content = file.read()
+        lines = content.strip().split("\n")
+        light_source = np.zeros( (len(lines), 3), dtype=float)
 
-def reconstruct( file_Dir ):
+        for i, line in enumerate( lines ):
+            parts = line.strip().split(':')
+            values = parts[1].strip()[1:-1].split(',')
+            light_source[i] = [int(value) for value in values ]
+    
+    #print( light_source[0] ) 
+    return light_source
+
+def normalize_matrix( matrix ):
+    norm = np.linalg.norm( matrix )
+    normalize_matrix = matrix / norm
+    return normalize_matrix
+
+def estimate_surface_height(row, col, z_appro, normal):
+    if normal[2] == 0:
+        return np.nan
+
+    surface_height = -((normal[0] / normal[2]) * col + (normal[1] / normal[2]) * row - z_appro)
+    
+    return surface_height
+
+def recover_surface( file_Dir ):
     global image_row
     global image_col
-    I_matrix = np.empty((0, image_row, image_col))
-    I_source_vector = 
 
-    for i in range(1, 7):
-        img_path = file_Dir + "/pic" + str(i) + ".bmp"
+    image = cv2.imread(file_Dir + "/pic1" + ".bmp",cv2.IMREAD_GRAYSCALE)
+    image_row , image_col = image.shape
+
+    I_matrix = np.empty((6, image_row * image_col))
+    z_appro_map = np.zeros( (image_row, image_col) )
+
+    
+    for i in range(6):
+        img_path = file_Dir + "/pic" + str(i+1) + ".bmp"
         img = read_bmp(img_path)
-        I_matrix = np.append(I_matrix, [img], axis=0)
+
+        img = img.reshape((-1, -1)).squeeze(1)
+        I_matrix.append(img)
+
+    light_source = get_light_source_from_txt(file_Dir)
+
+    #KdN = (np.linalg.inv(light_source.T @ light_source) @ light_source.T) @ I_matrix
+    KdN = np.linalg.lstsq(light_source, I_matrix, rcond=-1)[0].T
+
+    normal_vector = KdN.T.reshape((image_row, image_col, 3))
+    normal_visualization(normal_vector)
+
+    normal_vector = normalize_matrix(normal_vector)
+
+    # z-approximate
+    for row in range(image_row):
+        for col in range(image_col):
+            z_appro_map[row][col] = ( -1 * normal_vector[row][col][0] / normal_vector[row][col][2]) * col + ( -1 * normal_vector[row][col][1] / normal_vector[row][col][2]) * row 
+    
+    # reconstruct the surface from the z-approximate
+    surface_map = np.zeros((image_row, image_col))
+
+    for row in range(image_row):
+        for col in range(image_col):
+            surface_map[row][col] = estimate_surface_height(row, col, z_appro_map[row][col], normal_vector[row][col])
+
+    # smooth the surface
+    depth_visualization(surface_map)   
     
     
-
-
-
-
-
-
 if __name__ == '__main__':
-    reconstruct( file_Dir='/home/wei/CV_HW/CV_HW1_2024/test/bunny' )
+    recover_surface( file_Dir='/home/tingweiou/computer_vision_2023_spring/CV_HW1_2024/test/star' )
     #depth_visualization(Z)
     #save_ply(Z,filepath)
     #show_ply(filepath)
 
     # showing the windows of all visualization function
-    #plt.show()
+    plt.show()
