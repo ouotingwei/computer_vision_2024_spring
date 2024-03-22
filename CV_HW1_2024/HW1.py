@@ -2,7 +2,9 @@ import cv2
 import numpy as np
 import open3d as o3d
 import matplotlib.pyplot as plt
-import math
+import scipy
+from sklearn.preprocessing import normalize
+
 image_row = 120
 image_col = 120
 
@@ -67,85 +69,135 @@ def read_bmp(filepath):
     image = cv2.imread(filepath,cv2.IMREAD_GRAYSCALE)
     image_row , image_col = image.shape
     # use gaussian blur
-    smooth_img = cv2.GaussianBlur(image, (3, 3), 0)
-    return smooth_img
+    #smooth_img = cv2.GaussianBlur(image, (3, 3), 0)
+    return image
 
-def get_light_source_from_txt( file_Dir ):
+def read_data(file_Dir):
+    light_source = []
+    cnt = 0
     with open( file_Dir + '/LightSource.txt', 'r' ) as file:
-        content = file.read()
-        lines = content.strip().split("\n")
-        light_source = np.zeros( (len(lines), 3), dtype=float)
+        for line in file.readlines():
+            line = line.strip()
+            position = list(map(int, line[line.find('(') + 1: line.find(')')].split(',')))
+            light_source.append(np.array(position).astype(np.float32))
+            cnt += 1
 
-        for i, line in enumerate( lines ):
-            parts = line.strip().split(':')
-            values = parts[1].strip()[1:-1].split(',')
-            light_source[i] = [int(value) for value in values ]
+    # unit vector
+    light_source = normalize(light_source, axis = 1)
     
-    #print( light_source[0] ) 
-    return light_source
+    I_matrix = []
 
-def normalize_matrix( matrix ):
-    norm = np.linalg.norm( matrix )
-    normalize_matrix = matrix / norm
-    return normalize_matrix
-
-def estimate_surface_height(row, col, z_appro, normal):
-    if normal[2] == 0:
-        return np.nan
-
-    surface_height = -((normal[0] / normal[2]) * col + (normal[1] / normal[2]) * row - z_appro)
-    
-    return surface_height
-
-def recover_surface( file_Dir ):
-    global image_row
-    global image_col
-
-    image = cv2.imread(file_Dir + "/pic1" + ".bmp",cv2.IMREAD_GRAYSCALE)
-    image_row , image_col = image.shape
-
-    I_matrix = np.empty((6, image_row * image_col))
-    z_appro_map = np.zeros( (image_row, image_col) )
-
-    
     for i in range(6):
         img_path = file_Dir + "/pic" + str(i+1) + ".bmp"
         img = read_bmp(img_path)
+        I_matrix.append(img.ravel()) 
 
-        img = img.reshape((-1, -1)).squeeze(1)
-        I_matrix.append(img)
+    I_matrix = np.asarray(I_matrix)
 
-    light_source = get_light_source_from_txt(file_Dir)
+    return light_source, I_matrix
 
-    #KdN = (np.linalg.inv(light_source.T @ light_source) @ light_source.T) @ I_matrix
-    KdN = np.linalg.lstsq(light_source, I_matrix, rcond=-1)[0].T
+def find_normal(light_source, I_matrix):
+    # least square solution
+    KdN = np.linalg.solve(light_source.T @ light_source, light_source.T @ I_matrix).T
 
-    normal_vector = KdN.T.reshape((image_row, image_col, 3))
-    normal_visualization(normal_vector)
+    # Normalize the normal vectors
+    N = normalize(KdN, axis=0)
 
-    normal_vector = normalize_matrix(normal_vector)
+    # Visualize the normalized normal vectors
+    normal_visualization(N)
 
-    # z-approximate
-    for row in range(image_row):
-        for col in range(image_col):
-            z_appro_map[row][col] = ( -1 * normal_vector[row][col][0] / normal_vector[row][col][2]) * col + ( -1 * normal_vector[row][col][1] / normal_vector[row][col][2]) * row 
+    return N
+
+def recover_surface( mask, N ):
+    global image_row, image_col
+    N = np.reshape( N, (image_row, image_col, 3) ) 
+    num_pix_obj = np.size(np.where( mask!=0 )[0])
+
+    # Solve Mz = V
+    M = scipy.sparse.lil_matrix((2*num_pix_obj, num_pix_obj))
+    v = np.zeros((2*num_pix_obj, 1))
+
+    not_zero_row, not_zero_col = np.where( mask!=0 )
+
+    full_object = np.zeros((image_row, image_col)).astype(np.int16)
+
+    for cnt in range( num_pix_obj ):
+        full_object[ not_zero_row[cnt], not_zero_col[cnt] ] = cnt
     
-    # reconstruct the surface from the z-approximate
-    surface_map = np.zeros((image_row, image_col))
+    for cnt in range( num_pix_obj ):
+        row = not_zero_row[cnt]
+        col = not_zero_col[cnt]
 
-    for row in range(image_row):
-        for col in range(image_col):
-            surface_map[row][col] = estimate_surface_height(row, col, z_appro_map[row][col], normal_vector[row][col])
+        n_x = N[row, col, 0]
+        n_y = N[row, col, 1]
+        n_z = N[row, col, 2]
 
-    # smooth the surface
-    depth_visualization(surface_map)   
-    
-    
+        row_index = cnt * 2
+        if mask[row, col+1] == True:  # right pixel exists!
+            delta = full_object[row, col+1]
+            M[row_index, cnt] = -1
+            M[row_index, delta] = 1
+            v[row_index] = -1 * n_x / n_z
+        elif mask[row, col-1] == True:  # left pixel exists!
+            delta = full_object[row, col-1]
+            M[row_index, delta] = -1
+            M[row_index, cnt] = 1
+            v[row_index] = -1 * n_x / n_z
+
+        row_index = cnt * 2 + 1
+        if mask[row+1, col] == True:  # up pixel exists!
+            delta = full_object[row+1, col]
+            M[row_index, cnt] = 1
+            M[row_index, delta] = -1
+            v[row_index] = -1 * n_y / n_z
+        elif mask[row-1, col] == True:  # down pixel exists!
+            delta = full_object[row-1, col]
+            M[row_index, delta] = 1
+            M[row_index, cnt] = -1
+            v[row_index] = -1 * n_y / n_z
+
+    # find z from spsolve
+    MTM = M.T @ M
+    MTv = M.T @ v
+    print(MTM)
+    z = scipy.sparse.linalg.spsolve(MTM, MTv)
+
+    # filter the outlier & optimize the surface
+    depth = mask.astype(np.float32)
+
+    normalized_z = (z - np.mean(z)) / np.std(z)
+    outliner_idx = np.abs(normalized_z) > 10 # threshold for outlier
+    z_max = np.max(z[~outliner_idx])
+    z_min = np.min(z[~outliner_idx])
+
+    for i in range(num_pix_obj):
+        if z[i] > z_max:
+            depth[not_zero_row[i], not_zero_col[i]] = z_max
+        elif z[i] < z_min:
+            depth[not_zero_row[i], not_zero_col[i]] = z_min
+        else:
+            depth[not_zero_row[i], not_zero_col[i]] = z[i]
+
+    return depth
+
 if __name__ == '__main__':
-    recover_surface( file_Dir='/home/tingweiou/computer_vision_2023_spring/CV_HW1_2024/test/star' )
-    #depth_visualization(Z)
-    #save_ply(Z,filepath)
-    #show_ply(filepath)
+    file_Dir='/home/wei/CV_HW/CV_HW1_2024/test/star'
+    light_source, I_matrix = read_data(file_Dir)
+    N = find_normal( light_source, I_matrix)
+    
+    mask = read_bmp(file_Dir + '/pic1.bmp')
+    threshold_value = 20
+    max_value = 255
+    ret, mask = cv2.threshold(mask, threshold_value, max_value, cv2.THRESH_BINARY)
+
+    mask_visualization(mask)
+
+    depth = recover_surface(mask, N)
+
+    depth_visualization(depth)
+
+    save_ply(depth, file_Dir + '/' + '1' + '.ply')
+    show_ply(file_Dir + '/' + '1' + '.ply')
 
     # showing the windows of all visualization function
     plt.show()
