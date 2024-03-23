@@ -67,10 +67,13 @@ def read_bmp(filepath):
     global image_row
     global image_col
     image = cv2.imread(filepath,cv2.IMREAD_GRAYSCALE)
+    print(image.shape)
     image_row , image_col = image.shape
     # use gaussian blur
     #smooth_img = cv2.GaussianBlur(image, (3, 3), 0)
-    return image
+    smooth_img = cv2.medianBlur(image, 5)
+    print(image.shape)
+    return smooth_img
 
 def read_data(file_Dir):
     light_source = []
@@ -78,19 +81,19 @@ def read_data(file_Dir):
     with open( file_Dir + '/LightSource.txt', 'r' ) as file:
         for line in file.readlines():
             line = line.strip()
-            position = list(map(int, line[line.find('(') + 1: line.find(')')].split(',')))
-            light_source.append(np.array(position).astype(np.float32))
+            position = list(map( int, line[line.find('(') + 1: line.find(')')].split(',')) )
+            light_source.append( np.array(position).astype(np.float32) )
             cnt += 1
 
     # unit vector
-    light_source = normalize(light_source, axis = 1)
+    light_source = normalize( light_source, axis=1 )
     
     I_matrix = []
 
     for i in range(6):
         img_path = file_Dir + "/pic" + str(i+1) + ".bmp"
         img = read_bmp(img_path)
-        I_matrix.append(img.ravel()) 
+        I_matrix.append(img.ravel()) # 2d img -> 1d array
 
     I_matrix = np.asarray(I_matrix)
 
@@ -98,10 +101,10 @@ def read_data(file_Dir):
 
 def find_normal(light_source, I_matrix):
     # least square solution
-    KdN = np.linalg.solve(light_source.T @ light_source, light_source.T @ I_matrix).T
+    KdN = np.linalg.solve(light_source.T @ light_source, light_source.T @ I_matrix)
 
     # Normalize the normal vectors
-    N = normalize(KdN, axis=0)
+    N = normalize(KdN, axis=0).T
 
     # Visualize the normalized normal vectors
     normal_visualization(N)
@@ -111,93 +114,107 @@ def find_normal(light_source, I_matrix):
 def recover_surface( mask, N ):
     global image_row, image_col
     N = np.reshape( N, (image_row, image_col, 3) ) 
-    num_pix_obj = np.size(np.where( mask!=0 )[0])
+    no_pix_obj = np.size( np.where( mask!=0 )[0] )
 
     # Solve Mz = V
-    M = scipy.sparse.lil_matrix((2*num_pix_obj, num_pix_obj))
-    v = np.zeros((2*num_pix_obj, 1))
+    M = scipy.sparse.lil_matrix( (2*no_pix_obj, no_pix_obj) )
+    v = np.zeros( (2*no_pix_obj, 1) )
 
-    not_zero_row, not_zero_col = np.where( mask!=0 )
-
-    full_object = np.zeros((image_row, image_col)).astype(np.int16)
-
-    for cnt in range( num_pix_obj ):
-        full_object[ not_zero_row[cnt], not_zero_col[cnt] ] = cnt
+    nonzero_h, nonzero_w = np.where(mask!=0)
     
-    for cnt in range( num_pix_obj ):
-        row = not_zero_row[cnt]
-        col = not_zero_col[cnt]
+    # Calculate the index number used in filling M
+    index_array = np.zeros( (image_row, image_col) ).astype(np.int16)
+    for i in range( no_pix_obj ):
+        index_array[nonzero_h[i], nonzero_w[i]] = i
+    
+    for i in range( no_pix_obj ):
+        h = nonzero_h[i]
+        w = nonzero_w[i]
 
-        n_x = N[row, col, 0]
-        n_y = N[row, col, 1]
-        n_z = N[row, col, 2]
+        # normal
+        n_x = N[h, w, 0]
+        n_y = N[h, w, 1]
+        n_z = N[h, w, 2]
+        
+        j = i * 2
+        if mask[h, w+1]:    # check right hand side
+            k = index_array[h, w+1]
+            M[j, i] = -1
+            M[j, k] = 1
+            v[j] = -n_x/n_z
 
-        row_index = cnt * 2
-        if mask[row, col+1] == True:  # right pixel exists!
-            delta = full_object[row, col+1]
-            M[row_index, cnt] = -1
-            M[row_index, delta] = 1
-            v[row_index] = -1 * n_x / n_z
-        elif mask[row, col-1] == True:  # left pixel exists!
-            delta = full_object[row, col-1]
-            M[row_index, delta] = -1
-            M[row_index, cnt] = 1
-            v[row_index] = -1 * n_x / n_z
+        elif mask[h, w-1]:  # check left hand side
+            k = index_array[h, w-1]
+            M[j, k] = -1
+            M[j, i] = 1
+            v[j] = -n_x/n_z
 
-        row_index = cnt * 2 + 1
-        if mask[row+1, col] == True:  # up pixel exists!
-            delta = full_object[row+1, col]
-            M[row_index, cnt] = 1
-            M[row_index, delta] = -1
-            v[row_index] = -1 * n_y / n_z
-        elif mask[row-1, col] == True:  # down pixel exists!
-            delta = full_object[row-1, col]
-            M[row_index, delta] = 1
-            M[row_index, cnt] = -1
-            v[row_index] = -1 * n_y / n_z
+        j = i * 2 + 1
+        if mask[h+1, w]:   # check upper side
+            k = index_array[h+1, w]
+            M[j, i] = 1
+            M[j, k] = -1
+            v[j] = -n_y/n_z
+
+        elif mask[h-1, w]:  # check down side
+            k = index_array[h, w-1]
+            M[j, k] = 1
+            M[j, i] = -1
+            v[j] = -n_y/n_z
 
     # find z from spsolve
     MTM = M.T @ M
     MTv = M.T @ v
-    print(MTM)
-    z = scipy.sparse.linalg.spsolve(MTM, MTv)
+    z = scipy.sparse.linalg.spsolve( MTM, MTv )
 
     # filter the outlier & optimize the surface
     depth = mask.astype(np.float32)
 
-    normalized_z = (z - np.mean(z)) / np.std(z)
-    outliner_idx = np.abs(normalized_z) > 10 # threshold for outlier
-    z_max = np.max(z[~outliner_idx])
-    z_min = np.min(z[~outliner_idx])
+    normalized_z = ( z - np.mean(z) ) / np.std(z)
+    outliner_idx = np.abs(normalized_z) > 5 # threshold for outlier
+    z_max = np.max( z[~outliner_idx] )
+    z_min = np.min( z[~outliner_idx] )
 
-    for i in range(num_pix_obj):
+    for i in range(no_pix_obj):
         if z[i] > z_max:
-            depth[not_zero_row[i], not_zero_col[i]] = z_max
+            depth[nonzero_h[i], nonzero_w[i]] = z_max
         elif z[i] < z_min:
-            depth[not_zero_row[i], not_zero_col[i]] = z_min
+            depth[nonzero_h[i], nonzero_w[i]] = z_min
         else:
-            depth[not_zero_row[i], not_zero_col[i]] = z[i]
-
-    return depth
-
-if __name__ == '__main__':
-    file_Dir='/home/wei/CV_HW/CV_HW1_2024/test/star'
-    light_source, I_matrix = read_data(file_Dir)
-    N = find_normal( light_source, I_matrix)
-    
-    mask = read_bmp(file_Dir + '/pic1.bmp')
-    threshold_value = 20
-    max_value = 255
-    ret, mask = cv2.threshold(mask, threshold_value, max_value, cv2.THRESH_BINARY)
-
-    mask_visualization(mask)
-
-    depth = recover_surface(mask, N)
+            depth[nonzero_h[i], nonzero_w[i]] = z[i]
 
     depth_visualization(depth)
 
-    save_ply(depth, file_Dir + '/' + '1' + '.ply')
-    show_ply(file_Dir + '/' + '1' + '.ply')
+    return depth
+
+def find_mask( file_Dir ):
+    mask = read_bmp( file_Dir + '/pic1.bmp' )
+    threshold_value = 20
+    max_value = 255
+    _, mask = cv2.threshold( mask, threshold_value, max_value, cv2.THRESH_BINARY )
+
+    mask_visualization(mask)
+
+    return mask
+
+if __name__ == '__main__':
+    # file path
+    file_Dir='/home/tingweiou/computer_vision_2023_spring/CV_HW1_2024/test/noisy_venus'
+
+    # read files
+    light_source, I_matrix = read_data(file_Dir)
+
+    # create normal
+    N = find_normal( light_source, I_matrix )
+    
+    # create mask
+    mask = find_mask(file_Dir)
+
+    # create depth
+    depth = recover_surface( mask, N )
+
+    save_ply( depth, file_Dir + '/' + 'star' + '.ply' )
+    show_ply( file_Dir + '/' + 'star' + '.ply' )
 
     # showing the windows of all visualization function
     plt.show()
