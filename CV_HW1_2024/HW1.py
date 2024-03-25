@@ -67,12 +67,9 @@ def read_bmp(filepath):
     global image_row
     global image_col
     image = cv2.imread(filepath,cv2.IMREAD_GRAYSCALE)
-    print(image.shape)
     image_row , image_col = image.shape
-    # use gaussian blur
-    #smooth_img = cv2.GaussianBlur(image, (3, 3), 0)
+    #smooth_img = cv2.GaussianBlur(image, (15, 15), 0)
     smooth_img = cv2.medianBlur(image, 5)
-    print(image.shape)
     return smooth_img
 
 def read_data(file_Dir):
@@ -100,7 +97,8 @@ def read_data(file_Dir):
     return light_source, I_matrix
 
 def find_normal(light_source, I_matrix):
-    # least square solution
+    print(light_source.shape)
+    print(I_matrix.shape)
     KdN = np.linalg.solve(light_source.T @ light_source, light_source.T @ I_matrix)
 
     # Normalize the normal vectors
@@ -171,7 +169,8 @@ def recover_surface( mask, N ):
     depth = mask.astype(np.float32)
 
     normalized_z = ( z - np.mean(z) ) / np.std(z)
-    outliner_idx = np.abs(normalized_z) > 5 # threshold for outlier
+
+    outliner_idx = np.abs(normalized_z) > 3 # threshold for outlier
     z_max = np.max( z[~outliner_idx] )
     z_min = np.min( z[~outliner_idx] )
 
@@ -187,6 +186,7 @@ def recover_surface( mask, N ):
 
     return depth
 
+
 def find_mask( file_Dir ):
     mask = read_bmp( file_Dir + '/pic1.bmp' )
     threshold_value = 20
@@ -199,7 +199,7 @@ def find_mask( file_Dir ):
 
 if __name__ == '__main__':
     # file path
-    file_Dir='/home/tingweiou/computer_vision_2023_spring/CV_HW1_2024/test/noisy_venus'
+    file_Dir='/home/tingweiou/computer_vision_2023_spring/CV_HW1_2024/test/venus'
 
     # read files
     light_source, I_matrix = read_data(file_Dir)
@@ -213,8 +213,8 @@ if __name__ == '__main__':
     # create depth
     depth = recover_surface( mask, N )
 
-    save_ply( depth, file_Dir + '/' + 'star' + '.ply' )
-    show_ply( file_Dir + '/' + 'star' + '.ply' )
+    save_ply( depth, file_Dir + '/' + 'venus' + '.ply' )
+    show_ply( file_Dir + '/' + 'venus' + '.ply' )
 
     # showing the windows of all visualization function
     plt.show()
