@@ -155,7 +155,7 @@ def recover_surface( mask, N ):
             v[j] = -n_y/n_z
 
         elif mask[h-1, w]:  # check down side
-            k = index_array[h, w-1]
+            k = index_array[h-1, w]
             M[j, k] = 1
             M[j, i] = -1
             v[j] = -n_y/n_z
@@ -170,7 +170,7 @@ def recover_surface( mask, N ):
 
     normalized_z = ( z - np.mean(z) ) / np.std(z)
 
-    outliner_idx = np.abs(normalized_z) > 3 # threshold for outlier
+    outliner_idx = np.abs(normalized_z) > 10 # threshold for outlier
     z_max = np.max( z[~outliner_idx] )
     z_min = np.min( z[~outliner_idx] )
 
@@ -199,7 +199,7 @@ def find_mask( file_Dir ):
 
 if __name__ == '__main__':
     # file path
-    file_Dir='/home/tingweiou/computer_vision_2023_spring/CV_HW1_2024/test/venus'
+    file_Dir='/home/wei/computer_vision_2024_spring/CV_HW1_2024/test/venus'
 
     # read files
     light_source, I_matrix = read_data(file_Dir)
