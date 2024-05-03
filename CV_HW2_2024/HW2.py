@@ -1,12 +1,9 @@
 import cv2 as cv
-import numpy as np
-import random
-import math
-import sys
 import os
-from tqdm import tqdm
+import numpy as np
 
 import feature_match as fm
+import stiching as stich
 
 file_path = "/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base"
 
@@ -16,7 +13,7 @@ def read_img( path ):
     img = cv.imread( path )
     img_gray = cv.cvtColor( img, cv.COLOR_BGR2GRAY )
 
-    return img, img_gray
+    return cylinder_projection(img), cylinder_projection(img_gray)
 
 # the dtype of img must be "uint8" to avoid the error of SIFT detector
 def img_to_gray( img ):
@@ -44,65 +41,21 @@ def find_sift_kp_and_des( img_gray ):
 
     return kp, des
 
-def stitch_img(left, right, H):
-    print("stiching image ...")
-    
-    # Convert to double and normalize. Avoid noise.
-    left = cv.normalize(left.astype('float'), None, 
-                            0.0, 1.0, cv.NORM_MINMAX)   
-    # Convert to double and normalize.
-    right = cv.normalize(right.astype('float'), None, 
-                            0.0, 1.0, cv.NORM_MINMAX)   
-    
-    # left image
-    height_l, width_l, channel_l = left.shape
-    corners = [[0, 0, 1], [width_l, 0, 1], [width_l, height_l, 1], [0, height_l, 1]]
-    corners_new = [np.dot(H, corner) for corner in corners]
-    corners_new = np.array(corners_new).T 
-    x_news = corners_new[0] / corners_new[2]
-    y_news = corners_new[1] / corners_new[2]
-    y_min = min(y_news)
-    x_min = min(x_news)
+def cylinder_projection( img, focal=3000 ):
+    h, w = img.shape[:2]
+    cylinder_projection_img = np.zeros_like( img )
+    center_x, center_y = w//2, h//2
 
-    translation_mat = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
-    H = np.dot(translation_mat, H)
+    for y in range( h ):
+        for x in range( w ):
+            theta = ( x - center_x ) / focal
+            h_dash = ( y - center_y ) / np.cos( theta ) + center_y
+            x_proj = int( np.sin(theta) * focal + center_x )
+            y_proj = int( h_dash )
+            if 0 <= x_proj < w and 0 <= y_proj < h:
+                cylinder_projection_img[y, x] = img[y_proj, x_proj]
     
-    # Get height, width
-    height_new = int(round(abs(y_min) + height_l))
-    width_new = int(round(abs(x_min) + width_l))
-    size = (width_new, height_new)
-
-    # right image
-    warped_l = cv.warpPerspective(src=left, M=H, dsize=size)
-
-    height_r, width_r, channel_r = right.shape
-    
-    height_new = int(round(abs(y_min) + height_r))
-    width_new = int(round(abs(x_min) + width_r))
-    size = (width_new, height_new)
-    
-
-    warped_r = cv.warpPerspective(src=right, M=translation_mat, dsize=size)
-     
-    black = np.zeros(3)  # Black pixel.
-    
-    # Stitching procedure, store results in warped_l.
-    for i in tqdm(range(warped_r.shape[0])):
-        for j in range(warped_r.shape[1]):
-            pixel_l = warped_l[i, j, :]
-            pixel_r = warped_r[i, j, :]
-            
-            if not np.array_equal(pixel_l, black) and np.array_equal(pixel_r, black):
-                warped_l[i, j, :] = pixel_l
-            elif np.array_equal(pixel_l, black) and not np.array_equal(pixel_r, black):
-                warped_l[i, j, :] = pixel_r
-            elif not np.array_equal(pixel_l, black) and not np.array_equal(pixel_r, black):
-                warped_l[i, j, :] = (pixel_l + pixel_r) / 2
-            else:
-                pass
-                  
-    stitch_image = warped_l[:warped_r.shape[0], :warped_r.shape[1], :]
-    return stitch_image
+    return cylinder_projection_img
 
 if __name__ == '__main__':
     if not os.path.exists(file_path):
@@ -110,29 +63,48 @@ if __name__ == '__main__':
         exit()
 
     img_file = os.listdir(file_path)
+    img_file.sort()
+    print(img_file)
 
-    img = cv.imread( os.path.join(file_path, img_file[0].split('.')[0] + ".jpg") )
+    img = []
+    img_gray = []
 
-    output_img_size = (img.shape[1], img.shape[0])
+    for i in range( len(img_file)-1 ):
+        if i == 0:
+            img_left_path = os.path.join(file_path, img_file[i].split('.')[0] + ".jpg")
+        else:
+            img_left_path = os.path.join("CV_HW2_2024/Photos/Base/result_image.jpg")
 
-    for i in range(len(img_file) - 1):
-        now_img_path = os.path.join(file_path, img_file[i].split('.')[0] + ".jpg")
-        next_img_path = os.path.join(file_path, img_file[i + 1].split('.')[0] + ".jpg")
+    img_1, img_1_gray = read_img(os.path.join(file_path, img_file[0].split('.')[0] + ".jpg"))
 
-        now_img, now_gray = read_img(now_img_path)
-        next_img, next_gray = read_img(next_img_path)
+    img_2, img_2_gray = read_img(os.path.join(file_path, img_file[1].split('.')[0] + ".jpg"))
+    img_3, img_3_gray = read_img(os.path.join(file_path, img_file[2].split('.')[0] + ".jpg"))
 
-        now_kp, now_des = find_sift_kp_and_des(now_gray)
-        print("now kp:", len(now_kp))
+    img_1_kp, img_1_des = find_sift_kp_and_des(img_1_gray)
+    img_2_kp, img_2_des = find_sift_kp_and_des(img_2_gray)
+    img_3_kp, img_3_des = find_sift_kp_and_des(img_3_gray)
 
-        next_kp, next_des = find_sift_kp_and_des(next_gray)
-        print("next kp:", len(next_kp))
+    matcher_1_2 = fm.feature_match(img_1, img_2, img_1_kp, img_2_kp, img_1_des, img_2_des)
+    Homography_matrix_1_2 = matcher_1_2.frame_match()
 
-        matcher = fm.feature_match(now_img, next_img, now_kp, next_kp, now_des, next_des)
-        Homography_matrix = matcher.frame_match()
+    stitched_img_1_2 = stich.stitch_img(img_1, img_2, Homography_matrix_1_2)
 
-        stitched_img = stitch_img(now_img, next_img, Homography_matrix)
+    result_image_bgr = (stitched_img_1_2 * 255).astype(np.uint8)
+    result_image_bgr = stich.removeBlackBorder(result_image_bgr)
+    #result_image_bgr = cv.cvtColor(result_image_bgr, cv.COLOR_RGB2BGR)
+    cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', result_image_bgr)
 
-        cv.imshow("Stitched Image", stitched_img)
-        cv.waitKey(0)
-        cv.destroyAllWindows()
+    img_1_2, img_1_2_gray = read_img("CV_HW2_2024/Photos/Base/result_image.jpg")
+    img_1_2_kp, img_1_2_des = find_sift_kp_and_des(img_1_2_gray)
+
+    matcher_1_2_3 = fm.feature_match(img_1_2, img_3, img_1_2_kp, img_3_kp, img_1_2_des, img_3_des)
+    Homography_matrix_1_2_3 = matcher_1_2_3.frame_match()
+
+    stitched_img_1_2_3 = stich.stitch_img(img_1_2, img_3, Homography_matrix_1_2_3)
+
+    result_image_bgr = (stitched_img_1_2_3 * 255).astype(np.uint8)
+    cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', result_image_bgr)
+    
+    #cv.imshow("Stitched Image", stitched_img)
+    #cv.waitKey(0)
+    #cv.destroyAllWindows()

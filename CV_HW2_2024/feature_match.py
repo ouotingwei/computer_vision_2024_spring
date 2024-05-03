@@ -1,5 +1,8 @@
 import numpy as np
 import cv2 as cv
+import numpy as np
+import random
+import math
 from matplotlib import pyplot as plt
 
 class feature_match:
@@ -15,6 +18,12 @@ class feature_match:
         # input descriptors
         self.descriptor1 = descriptor1
         self.descriptor2 = descriptor2
+
+    def knn_matcher(self, k=2):
+        pass
+
+    def find_homography_matrix( src_Point, dst_Point, ransac_threshold=4):
+        pass
 
     def frame_match(self):
         # Create BFMatcher object with cross check
