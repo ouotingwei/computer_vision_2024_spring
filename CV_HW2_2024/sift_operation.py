@@ -20,11 +20,9 @@ class feature_match:
     
     def knn_find_good_match(self, threshold=0.75):
         # KNN
-        print(len(self.keypoint1))
         print("KNN matching ...")
         k_matches = []
         for i,d1 in enumerate( self.descriptor1 ):
-            print(i)
             min_kp = [-1,np.inf]
             sec_min_kp = [-1,np.inf]
             for j,d2 in enumerate( self.descriptor2 ):

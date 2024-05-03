@@ -9,7 +9,7 @@ from tqdm import tqdm
 import sift_operation as si_o
 import stitch_operation as st_o
 
-file_path = "/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Challenge"
+file_path = "/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base"
     
 def removeBlackBorder( img ):
     return cv.medianBlur(img, 5)
@@ -68,7 +68,7 @@ def cylinder_projection( img, focal=4000 ):
     
     return cylinder_projection_img
 
-def crop_img( img, crop_ratio=1):
+def crop_img( img, crop_ratio=0.8):
     height, width = img.shape[:2]
 
     crop_width = int(width * crop_ratio)
@@ -115,7 +115,7 @@ if __name__ == '__main__':
         img_right_kp, img_right_des = find_sift_kp_and_des( img_right_gray )
     
         matcher = si_o.feature_match(img_left, img_right, img_left_kp, img_right_kp, img_left_des, img_right_des)
-        Homography_matrix = matcher.frame_match( MY_FUNCTION=True )
+        Homography_matrix = matcher.frame_match( MY_FUNCTION=False )
         stitched_img = st_o.stitch_img(img_left, img_right, Homography_matrix)
     
         result_image_bgr = (stitched_img * 255).astype(np.uint8)
