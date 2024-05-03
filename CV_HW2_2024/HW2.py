@@ -1,25 +1,36 @@
 import cv2 as cv
 import os
 import numpy as np
+import random
+import math
+from matplotlib import pyplot as plt
+from tqdm import tqdm
 
-import feature_match as fm
-import stiching as stich
+import sift_operation as si_o
+import stitch_operation as st_o
 
-file_path = "/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base"
+file_path = "/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Challenge"
+    
+def removeBlackBorder( img ):
+    return cv.medianBlur(img, 5)
 
 # read the image file & output the color & gray image
-def read_img( path ):
+def read_img( path, cylinder=False ):
     # opencv read image in BGR color space
     img = cv.imread( path )
     img_gray = cv.cvtColor( img, cv.COLOR_BGR2GRAY )
-
-    return cylinder_projection(img), cylinder_projection(img_gray)
+    if cylinder == False:
+        return img, img_gray
+    
+    else:
+        return cylinder_projection(img), cylinder_projection(img_gray)
 
 # the dtype of img must be "uint8" to avoid the error of SIFT detector
 def img_to_gray( img ):
     if img.dtype != "uint8":
         print( "The input image dtype is not uint8 , image type is : ",img.dtype )
         return
+    
     img_gray = cv.cvtColor( img, cv.COLOR_BGR2GRAY )
     return img_gray
 
@@ -41,7 +52,7 @@ def find_sift_kp_and_des( img_gray ):
 
     return kp, des
 
-def cylinder_projection( img, focal=3000 ):
+def cylinder_projection( img, focal=4000 ):
     h, w = img.shape[:2]
     cylinder_projection_img = np.zeros_like( img )
     center_x, center_y = w//2, h//2
@@ -57,6 +68,19 @@ def cylinder_projection( img, focal=3000 ):
     
     return cylinder_projection_img
 
+def crop_img( img, crop_ratio=1):
+    height, width = img.shape[:2]
+
+    crop_width = int(width * crop_ratio)
+    crop_height = int(height * crop_ratio)
+
+    start_x = width - crop_width
+    start_y = height - crop_height
+
+    cropped_img = img[start_y:height, start_x:width]
+
+    return cropped_img
+
 if __name__ == '__main__':
     if not os.path.exists(file_path):
         print("The file path does not exist.")
@@ -65,51 +89,38 @@ if __name__ == '__main__':
     img_file = os.listdir(file_path)
     img_file.sort()
     print(img_file)
+    files_cnt = len(img_file)
 
-    for i in range(1,  len(img_file)-1 ):
+    for i in range( files_cnt-1 ):
+        img_left = None
+        img_left_gray = None
+        img_right = None
+        img_right_gray = None
+
         if i == 0:
             img_left_path = os.path.join(file_path, img_file[0].split('.')[0] + ".jpg")
             img_right_path = os.path.join(file_path, img_file[1].split('.')[0] + ".jpg")
+            img_left, img_left_gray = read_img( img_left_path, False )
+            img_right, img_right_gray = read_img( img_right_path, False )
         else:
             img_left_path = os.path.join("CV_HW2_2024/Photos/Base/result_image.jpg")
             img_right_path = os.path.join(file_path, img_file[i+1].split('.')[0] + ".jpg")
-
-        img_left, img_left_gray = read_img( img_left_path )
-        img_right, img_right_gray = read_img( img_right_path )
+            img_left, img_left_gray = read_img( img_left_path, False )
+            img_right, img_right_gray = read_img( img_right_path, False )
+        
+        print("left:", img_left_path)
+        print("right:", img_right_path)
     
         img_left_kp, img_left_des = find_sift_kp_and_des( img_left_gray )
         img_right_kp, img_right_des = find_sift_kp_and_des( img_right_gray )
     
-        matcher = fm.feature_match(img_left, img_right, img_left_kp, img_right_kp, img_left_des, img_right_des)
-        Homography_matrix = matcher.frame_match()
-        stitched_img = stich.stitch_img(img_left, img_right, Homography_matrix)
+        matcher = si_o.feature_match(img_left, img_right, img_left_kp, img_right_kp, img_left_des, img_right_des)
+        Homography_matrix = matcher.frame_match( MY_FUNCTION=True )
+        stitched_img = st_o.stitch_img(img_left, img_right, Homography_matrix)
     
         result_image_bgr = (stitched_img * 255).astype(np.uint8)
-        result_image_bgr = stich.removeBlackBorder(result_image_bgr)
+        result_image_bgr = removeBlackBorder(result_image_bgr)
 
-        # crop img into rectangle
-        stitched = cv.copyMakeBorder(result_image_bgr, 10, 10, 10, 10, cv.BORDER_CONSTANT, (0, 0, 0))
-        result_gray = cv.cvtColor( result_img_bgr, cv.COLOR_BGR2GRAY )
-        threshhold = cv.trreshold( result_gray, 0, 255, cv.THRESH_BINARY)[1]
-        cnts = cv.findCountours( threshold, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIIMPLE)[0]
-
-        mask = np.zeros( threshold.shape, dtype="uint8" )
-        (x, y, w, h) = cv2.boundingRect( cnts[0] )
-        cv.rectangle( mask, (x,y), (x+w,y+h ), 255, -1 )
-
-        # erode until ok
-        min_Rect = mask.copy()
-        sub = mask.copy()
-        while cv.countNonZero( sub ) > 0:
-            minRect = cv2.erode( minRect, None )
-            sub = cv.subtract( minRect, threshold )
-
-        cnts = cv.findContours(minRect, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[0]
-        (x, y, w, h) = cv.boundingRect(cnts[0])
-        stitched = stitched[y:y + h, x:x + w]
+        cropped_img = crop_img( result_image_bgr )
         
-        cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', stitched)
-    
-    #cv.imshow("Stitched Image", stitched_img)
-    #cv.waitKey(0)
-    #cv.destroyAllWindows()
+        cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', cropped_img)
