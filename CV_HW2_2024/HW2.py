@@ -86,8 +86,29 @@ if __name__ == '__main__':
     
         result_image_bgr = (stitched_img * 255).astype(np.uint8)
         result_image_bgr = stich.removeBlackBorder(result_image_bgr)
-        #result_image_bgr = cv.cvtColor(result_image_bgr, cv.COLOR_RGB2BGR)
-        cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', result_image_bgr)
+
+        # crop img into rectangle
+        stitched = cv.copyMakeBorder(result_image_bgr, 10, 10, 10, 10, cv.BORDER_CONSTANT, (0, 0, 0))
+        result_gray = cv.cvtColor( result_img_bgr, cv.COLOR_BGR2GRAY )
+        threshhold = cv.trreshold( result_gray, 0, 255, cv.THRESH_BINARY)[1]
+        cnts = cv.findCountours( threshold, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIIMPLE)[0]
+
+        mask = np.zeros( threshold.shape, dtype="uint8" )
+        (x, y, w, h) = cv2.boundingRect( cnts[0] )
+        cv.rectangle( mask, (x,y), (x+w,y+h ), 255, -1 )
+
+        # erode until ok
+        min_Rect = mask.copy()
+        sub = mask.copy()
+        while cv.countNonZero( sub ) > 0:
+            minRect = cv2.erode( minRect, None )
+            sub = cv.subtract( minRect, threshold )
+
+        cnts = cv.findContours(minRect, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[0]
+        (x, y, w, h) = cv.boundingRect(cnts[0])
+        stitched = stitched[y:y + h, x:x + w]
+        
+        cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', stitched)
     
     #cv.imshow("Stitched Image", stitched_img)
     #cv.waitKey(0)
