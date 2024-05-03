@@ -22,9 +22,29 @@ class feature_match:
     def knn_matcher(self, k=2):
         pass
 
-    def find_homography_matrix( src_Point, dst_Point, ransac_threshold=4):
-        pass
+    def find_best_homography_matrix()
 
+    def find_homography_matrix( src_Point, dst_Point, ransac_threshold=4):
+        A = []
+        for i in range( len(src_Point) ):
+            A.append( [src_Point[i, 0], src_Point[i, 1], 1, 0, 0, 0, -src_Point[i, 0], -dst_Point[i, 0], -src_Point[i, 1] * dst_Point[i ,0], -dst_Point[i, 0] ] )
+            A.append([0, 0, 0, src_Point[i, 0], src_Point[i, 1], 1, -src_Point[i, 0] * dst_Point[i, 1], -src_Point[i, 1] * dst_Point[i, 1], -dst_Point[i, 1]])
+
+        # solve linear eq Ah = 0 (SVD)
+        u, sigma, vt = np.linalg.svd(A)
+
+        H = np.reshape( vt[8], (3, 3) )
+        H = ( 1/H.item(8) * H
+
+        iteration = 2000
+        max_inliner_num = 0
+        BEST_H = None
+
+        for iter in range(iteration):
+            random_sample_idx = random.sample(range(len(matches)), 4)
+
+        return BEST_H
+    
     def frame_match(self):
         # Create BFMatcher object with cross check
         bf = cv.BFMatcher()
