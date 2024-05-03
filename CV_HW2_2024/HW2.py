@@ -66,44 +66,28 @@ if __name__ == '__main__':
     img_file.sort()
     print(img_file)
 
-    img = []
-    img_gray = []
-
-    for i in range( len(img_file)-1 ):
+    for i in range(1,  len(img_file)-1 ):
         if i == 0:
-            img_left_path = os.path.join(file_path, img_file[i].split('.')[0] + ".jpg")
+            img_left_path = os.path.join(file_path, img_file[0].split('.')[0] + ".jpg")
+            img_right_path = os.path.join(file_path, img_file[1].split('.')[0] + ".jpg")
         else:
             img_left_path = os.path.join("CV_HW2_2024/Photos/Base/result_image.jpg")
+            img_right_path = os.path.join(file_path, img_file[i+1].split('.')[0] + ".jpg")
 
-    img_1, img_1_gray = read_img(os.path.join(file_path, img_file[0].split('.')[0] + ".jpg"))
-
-    img_2, img_2_gray = read_img(os.path.join(file_path, img_file[1].split('.')[0] + ".jpg"))
-    img_3, img_3_gray = read_img(os.path.join(file_path, img_file[2].split('.')[0] + ".jpg"))
-
-    img_1_kp, img_1_des = find_sift_kp_and_des(img_1_gray)
-    img_2_kp, img_2_des = find_sift_kp_and_des(img_2_gray)
-    img_3_kp, img_3_des = find_sift_kp_and_des(img_3_gray)
-
-    matcher_1_2 = fm.feature_match(img_1, img_2, img_1_kp, img_2_kp, img_1_des, img_2_des)
-    Homography_matrix_1_2 = matcher_1_2.frame_match()
-
-    stitched_img_1_2 = stich.stitch_img(img_1, img_2, Homography_matrix_1_2)
-
-    result_image_bgr = (stitched_img_1_2 * 255).astype(np.uint8)
-    result_image_bgr = stich.removeBlackBorder(result_image_bgr)
-    #result_image_bgr = cv.cvtColor(result_image_bgr, cv.COLOR_RGB2BGR)
-    cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', result_image_bgr)
-
-    img_1_2, img_1_2_gray = read_img("CV_HW2_2024/Photos/Base/result_image.jpg")
-    img_1_2_kp, img_1_2_des = find_sift_kp_and_des(img_1_2_gray)
-
-    matcher_1_2_3 = fm.feature_match(img_1_2, img_3, img_1_2_kp, img_3_kp, img_1_2_des, img_3_des)
-    Homography_matrix_1_2_3 = matcher_1_2_3.frame_match()
-
-    stitched_img_1_2_3 = stich.stitch_img(img_1_2, img_3, Homography_matrix_1_2_3)
-
-    result_image_bgr = (stitched_img_1_2_3 * 255).astype(np.uint8)
-    cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', result_image_bgr)
+        img_left, img_left_gray = read_img( img_left_path )
+        img_right, img_right_gray = read_img( img_right_path )
+    
+        img_left_kp, img_left_des = find_sift_kp_and_des( img_left_gray )
+        img_right_kp, img_right_des = find_sift_kp_and_des( img_right_gray )
+    
+        matcher = fm.feature_match(img_left, img_right, img_left_kp, img_right_kp, img_left_des, img_right_des)
+        Homography_matrix = matcher.frame_match()
+        stitched_img = stich.stitch_img(img_left, img_right, Homography_matrix)
+    
+        result_image_bgr = (stitched_img * 255).astype(np.uint8)
+        result_image_bgr = stich.removeBlackBorder(result_image_bgr)
+        #result_image_bgr = cv.cvtColor(result_image_bgr, cv.COLOR_RGB2BGR)
+        cv.imwrite('/home/wei/computer_vision_2024_spring/CV_HW2_2024/Photos/Base/result_image.jpg', result_image_bgr)
     
     #cv.imshow("Stitched Image", stitched_img)
     #cv.waitKey(0)
