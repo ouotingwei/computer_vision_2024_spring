@@ -68,7 +68,7 @@ def cylinder_projection( img, focal=4000 ):
     
     return cylinder_projection_img
 
-def crop_img( img, crop_ratio=0.8):
+def crop_img( img, crop_ratio=1):
     height, width = img.shape[:2]
 
     crop_width = int(width * crop_ratio)
