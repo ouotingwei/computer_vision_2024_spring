@@ -1,10 +1,6 @@
 import cv2 as cv
 import os
 import numpy as np
-import random
-import math
-from matplotlib import pyplot as plt
-from tqdm import tqdm
 
 import sift_operation as si_o
 import stitch_operation as st_o

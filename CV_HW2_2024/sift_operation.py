@@ -1,10 +1,7 @@
 import cv2 as cv
-import os
 import numpy as np
 import random
-import math
-from matplotlib import pyplot as plt
-from tqdm import tqdm
+
 
 class feature_match:
     def __init__(self, img1, img2, keypoint1, keypoint2, descriptor1, descriptor2):
@@ -110,8 +107,6 @@ class feature_match:
         print("inliers/matches: {}/{}".format(num_best_inliers, len(good_matches)))
 
         return best_inliers, best_H
-
-
     
     def frame_match( self, MY_FUNCTION=False ):
         if MY_FUNCTION == False:
